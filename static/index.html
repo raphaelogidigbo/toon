@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>toon</title>
+  <style>
+    :root { color-scheme: light; --ink: #1c1917; --paper: #f6f1e8; --line: #e4d8c8; --accent: #c4532a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.45 Georgia, serif; background: var(--paper); color: var(--ink); }
+    main { max-width: 980px; margin: 0 auto; padding: 28px 18px 60px; }
+    h1 { font-size: 32px; margin: 0 0 4px; }
+    p.lead { margin: 0 0 22px; color: #57534e; }
+    form, section { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+    label { display: block; font-size: 13px; margin: 10px 0 4px; }
+    textarea, select, input[type="file"] { width: 100%; font: 15px/1.4 sans-serif; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+    textarea { min-height: 90px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    button { margin-top: 14px; background: var(--accent); color: white; border: 0; border-radius: 8px; padding: 10px 16px; font: 15px sans-serif; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; margin-top: 16px; }
+    li { margin: 6px 0; }
+    li.done { color: #3f6212; }
+    li.running { color: var(--accent); }
+    li.failed, .error { color: #9f1239; }
+    .frames { display: flex; gap: 8px; overflow-x: auto; }
+    .frames img { height: 140px; border-radius: 8px; background: #eee; }
+    video { width: 100%; max-height: 520px; background: black; border-radius: 8px; }
+    .jobs { margin-top: 18px; }
+    .jobs button { background: transparent; color: var(--ink); border: 1px solid var(--line); margin: 0 8px 8px 0; }
+    .muted { color: #78716c; font-size: 13px; }
+    @media (max-width: 720px) { .row, .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>toon</h1>
+  <p class="lead">A short description in. A cartoon marketing video out. Start a brief with demo: to walk the page without API keys.</p>
+  <form id="form">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" placeholder="a 30s cartoon about a robot learning to share" required></textarea>
+    <div class="row">
+      <div>
+        <label for="aspect">Aspect</label>
+        <select id="aspect" name="aspect">
+          <option value="9:16">9:16</option>
+          <option value="16:9">16:9</option>
+        </select>
+      </div>
+      <div>
+        <label for="duration">Length</label>
+        <select id="duration" name="duration">
+          <option value="15">15s</option>
+          <option value="30" selected>30s</option>
+          <option value="45">45s</option>
+        </select>
+      </div>
+      <div>
+        <label for="tier">Motion</label>
+        <select id="tier" name="tier">
+          <option value="still">Still</option>
+          <option value="animated">Animated</option>
+        </select>
+      </div>
+    </div>
+    <label for="image">Your image, optional</label>
+    <input id="image" name="image" type="file" accept="image/png,image/jpeg,image/webp">
+    <label for="code">Access code, if required</label>
+    <input id="code" name="code" type="text" placeholder="Leave blank for demo: briefs" autocomplete="off">
+    <button id="go" type="submit">Generate</button>
+    <p id="health" class="muted"></p>
+  </form>
+  <div class="layout">
+    <section>
+      <strong>Stages</strong>
+      <ul id="stages"></ul>
+      <p id="error" class="error"></p>
+      <p id="spend" class="muted"></p>
+    </section>
+    <section>
+      <div class="frames" id="frames"></div>
+      <video id="player" controls hidden></video>
+      <p><a id="download" hidden>Download MP4</a></p>
+    </section>
+  </div>
+  <section class="jobs">
+    <strong>Past videos</strong>
+    <div id="past"></div>
+  </section>
+</main>
+<script>
+const stages = ["story", "cast", "frames", "speech", "motion", "assemble"];
+const labels = {story:"Story", cast:"Characters", frames:"Frames", speech:"Voices", motion:"Shots", assemble:"Video"};
+let current = "";
+let timer = 0;
+
+async function health() {
+  const data = await (await fetch("/api/health")).json();
+  const bits = [];
+  if (!data.story) bits.push("Add OPENAI_API_KEY to .env for the story and voices.");
+  if (!data.images) bits.push("Add OPENAI_API_KEY or FAL_KEY for pictures.");
+  if (!data.ffmpeg) bits.push("ffmpeg is not installed. The video step will stop until it is.");
+  if (!data.animation) {
+    document.querySelector('#tier option[value="animated"]').disabled = true;
+    bits.push("Animated stays off until FAL_KEY is set.");
+  }
+  document.getElementById("health").textContent = bits.join(" ");
+}
+
+function paint(job) {
+  current = job.id;
+  const status = job.status || {};
+  const list = document.getElementById("stages");
+  list.replaceChildren();
+  stages.forEach(name => {
+    const item = document.createElement("li");
+    item.className = (status.stages && status.stages[name]) || "pending";
+    item.textContent = labels[name];
+    list.appendChild(item);
+  });
+  document.getElementById("error").textContent = status.error || "";
+  const usd = job.spend ? Number(job.spend.usd || 0).toFixed(2) : "0.00";
+  document.getElementById("spend").textContent = "Spent about $" + usd;
+  const frames = document.getElementById("frames");
+  frames.replaceChildren();
+  (job.frames || []).forEach(name => {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = "/api/jobs/" + encodeURIComponent(job.id) + "/file/frames/" + encodeURIComponent(name);
+    frames.appendChild(img);
+  });
+  const player = document.getElementById("player");
+  const link = document.getElementById("download");
+  if (job.video) {
+    const src = "/api/jobs/" + encodeURIComponent(job.id) + "/file/out/final.mp4";
+    player.hidden = false;
+    player.src = src;
+    link.hidden = false;
+    link.href = src;
+    link.download = "final.mp4";
+  }
+}
+
+async function refresh() {
+  if (!current) return;
+  const job = await (await fetch(`/api/jobs/${current}`)).json();
+  paint(job);
+  if (job.status && (job.status.done || job.status.failed)) {
+    clearInterval(timer);
+    loadPast();
+  }
+}
+
+async function loadPast() {
+  const jobs = await (await fetch("/api/jobs")).json();
+  const past = document.getElementById("past");
+  past.replaceChildren();
+  jobs.forEach(job => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.id = job.id;
+    button.textContent = job.id;
+    past.appendChild(button);
+  });
+}
+
+document.getElementById("past").addEventListener("click", async (event) => {
+  const id = event.target.dataset.id;
+  if (!id) return;
+  clearInterval(timer);
+  paint(await (await fetch(`/api/jobs/${id}`)).json());
+  timer = setInterval(refresh, 1000);
+});
+
+document.getElementById("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = document.getElementById("go");
+  button.disabled = true;
+  const body = new FormData(event.target);
+  const response = await fetch("/api/jobs", {method: "POST", body});
+  const data = await response.json();
+  button.disabled = false;
+  if (!response.ok) {
+    document.getElementById("error").textContent = data.detail || "Could not start.";
+    return;
+  }
+  paint(data);
+  clearInterval(timer);
+  timer = setInterval(refresh, 1000);
+});
+
+health();
+loadPast();
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+{
+  "title": "Smoke",
+  "aspect": "9:16",
+  "size": {
+    "width": 720,
+    "height": 1280
+  },
+  "characters": [
+    {
+      "id": "hero",
+      "name": "Hero",
+      "look": "robot",
+      "voice": "alloy"
+    }
+  ],
+  "shots": [
+    {
+      "visual": "shot one",
+      "speaker": "hero",
+      "line": "",
+      "caption": "Caption one",
+      "seconds": 3,
+      "motion": "hold"
+    },
+    {
+      "visual": "shot two",
+      "speaker": "hero",
+      "line": "",
+      "caption": "Caption two",
+      "seconds": 3,
+      "motion": "hold"
+    }
+  ]
+}

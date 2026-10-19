@@ -1,0 +1,17 @@
+{
+  "id": "20261019_071318",
+  "stage": "queued",
+  "message": "Waiting to start",
+  "error": "",
+  "done": false,
+  "failed": false,
+  "stages": {
+    "story": "pending",
+    "cast": "pending",
+    "frames": "pending",
+    "speech": "pending",
+    "motion": "pending",
+    "assemble": "pending"
+  },
+  "updated": "2026-10-19T12:13:18.615963+00:00"
+}
